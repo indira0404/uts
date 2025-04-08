@@ -1,4 +1,5 @@
 import mysql.connector
+import pandas as pd
 from datetime import datetime
 
 def connect_db():
@@ -186,6 +187,87 @@ def tambah_pembayaran():
     except Exception as e:
         print(f"Terjadi kesalahan: {str(e)}")
 
+def generate_excel_report():
+    try:
+        # Get payment data
+        cursor.execute("""
+            SELECT 
+                nama, 
+                jumlah_jiwa,
+                jenis_zakat,
+                metode_pembayaran,
+                total_bayar,
+                nominal_dibayar,
+                kembalian,
+                keterangan,
+                tanggal_bayar
+            FROM pembayaran 
+            ORDER BY tanggal_bayar DESC
+        """)
+        payment_data = cursor.fetchall()
+        
+        if not payment_data:
+            print("Tidak ada data untuk di-export")
+            return
+            
+        # Create DataFrame
+        df = pd.DataFrame(payment_data, columns=[
+            'Nama',
+            'Jumlah Jiwa',
+            'Jenis Zakat',
+            'Metode Pembayaran',
+            'Total Bayar',
+            'Nominal Dibayar',
+            'Kembalian',
+            'Keterangan',
+            'Tanggal Bayar'
+        ])
+        
+        # Format currency columns
+        currency_columns = ['Total Bayar', 'Nominal Dibayar', 'Kembalian']
+        for col in currency_columns:
+            df[col] = df[col].apply(lambda x: f"Rp {float(x):,.2f}")
+        
+        # Generate filename with timestamp
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f'laporan_zakat_{timestamp}.xlsx'
+        
+        # Create Excel writer
+        with pd.ExcelWriter(filename, engine='xlsxwriter') as writer:
+            # Write DataFrame to Excel
+            df.to_excel(writer, sheet_name='Data Pembayaran', index=False)
+            
+            # Get workbook and worksheet
+            workbook = writer.book
+            worksheet = writer.sheets['Data Pembayaran']
+            
+            # Add formats
+            header_format = workbook.add_format({
+                'bold': True,
+                'align': 'center',
+                'bg_color': '#D3D3D3'
+            })
+            
+            # Apply formats
+            for col_num, value in enumerate(df.columns.values):
+                worksheet.write(0, col_num, value, header_format)
+                
+            # Auto-adjust columns width
+            for idx, col in enumerate(df.columns):
+                series = df[col]
+                max_len = max(
+                    series.astype(str).map(len).max(),
+                    len(str(series.name))
+                ) + 2
+                worksheet.set_column(idx, idx, max_len)
+        
+        print(f"\nLaporan berhasil di-export ke file: {filename}")
+        
+    except Exception as e:
+        print(f"Error saat generate laporan: {str(e)}")
+
+
+
 try:
     db = connect_db()
     cursor = db.cursor()
@@ -202,9 +284,10 @@ try:
         print("2. Tampilkan Data Beras")
         print("3. Tampilkan Data Pembayaran")
         print("4. Pembayaran Zakat")
-        print("5. Keluar")
+        print("5. Export Laporan Excel")
+        print("6. Keluar")
         
-        pilihan = input("Pilih menu (1-5): ")
+        pilihan = input("Pilih menu (1-6): ")
         
         if pilihan == '1':
             tambah_data_beras()
@@ -215,6 +298,8 @@ try:
         elif pilihan == '4':
             tambah_pembayaran()
         elif pilihan == '5':
+            generate_excel_report()
+        elif pilihan == '6':
             print("Program selesai")
             break
         else:
